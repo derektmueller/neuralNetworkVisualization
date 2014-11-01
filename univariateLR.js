@@ -9,7 +9,7 @@ var Game = (function () {
 function Game (width, height) {
     this._width = width;
     this._height = height;
-    this._trackHeight = 4 * (this._height / 5);
+    this._trackHeight = 4.8 * (this._height / 5);
     this._init ();
     this._board;
 };
@@ -147,21 +147,25 @@ Game.prototype._AIPlayer = function () {
             .remove ();
     }
     setInterval (function () {
-        shoot (Math.random () * that._width);
-    }, 1000); 
+        //shoot (Math.random () * that._width);
+        shoot (c.h (parseFloat (that._player.attr ('cx'))));
+    }, 1500); 
 };
 
 Game.prototype._buildTrainingSet = function () {
     var that = this;
-    var prevLocation = this._player.attr ('cx');
+    var prevLocation = parseFloat (this._player.attr ('cx'));
+    var i = 0;
     setInterval (function () {
-        currLocation = that._player.attr ('cx');
-        trainingSet.push ([[prevLocation], [currLocation]]);
-        if (trainingSet.length > 1500) {
-            trainingSet.shift ();
+        if (i % 3 === 0 || (i - 1) % 3 === 0) {
+            currLocation = parseFloat (that._player.attr ('cx'));
+            trainingSet.push ([[prevLocation], [currLocation]]);
+            if (trainingSet.length > 15) {
+                trainingSet.shift ();
+            }
+            prevLocation = currLocation
+            c.plot ();
         }
-        prevLocation = currLocation
-        c.plot (trainingSet);
     }, 800); 
 };
 
@@ -183,7 +187,55 @@ function Chart (width, height) {
     this._chart; 
     this._width = width;
     this._height = height;
+    this._alpha = 0.00001;
+    var that = this;
+    this.h = this._getH (0, 0);
+
+    this._cost = function (theta0, theta1) {
+        var h = that._getH (theta0, theta1);
+        var sum = 0;
+        trainingSet.forEach (function (ex) {
+            sum += Math.pow (h (ex[0]) - ex[1], 2);
+        });
+        return (1 / (2 * trainingSet.length)) * sum;
+    };
+
+    this._partialDerivatives = [
+        function (theta0, theta1) {
+            var h = that._getH (theta0, theta1);
+            var sum = 0;
+            trainingSet.forEach (function (ex) {
+                sum += h (ex[0]) - ex[1];    
+            });
+            return (1 / (trainingSet.length)) * sum;
+        },
+        function (theta0, theta1) {
+            var h = that._getH (theta0, theta1);
+            var sum = 0;
+            trainingSet.forEach (function (ex) {
+                sum += (h (ex[0]) - ex[1]) * ex[0];
+            });
+            return (1 / (trainingSet.length)) * sum;
+        },
+    ];
+
     this._init ();
+};
+
+Chart.prototype._gradientDescent = function () {
+    var i = 100;
+    var theta0 = theta1 = 0;
+    while (--i > 0) {
+        var tmp0 = theta0 - 
+            this._alpha * this._partialDerivatives[0] (theta0, theta1)
+        var tmp1 = theta1 - 
+            this._alpha * this._partialDerivatives[1] (theta0, theta1)
+        theta0 = tmp0;
+        theta1 = tmp1;
+        var cost = this._cost (theta0, theta1);
+        if (cost < 1) break;
+    }
+    return [theta0, theta1];
 };
 
 Chart.prototype._getH = function (theta0, theta1) {
@@ -204,32 +256,54 @@ Chart.prototype.plot = function () {
     this._chart
         .selectAll ('circle')
             .data (trainingSet)
+        .attr ('cx', function (d, i) {
+            return d[0];
+        })
+        .attr ('cy', function (d, i) {
+            return (that._height - d[1]);
+        })
+        .attr ('r', 5)
+        .attr ('fill', 'black')
         .enter ()
             .append ('circle')
-            .attr ('cx', function (d, i) {
-                return d[0];
-            })
-            .attr ('cy', function (d, i) {
-                return 5 + (that._height - 7 - 
-                    d[1] * ((that._height - 7) / that._width));
-            })
-            .attr ('r', 2)
-            .attr ('fill', 'black')
     ;
 
+};
+
+Chart.prototype._linearRegression = function () {
+    var theta = this._gradientDescent ();
+    var h = this._getH.apply (null, theta);
+    this._chart
+        .select ('line')
+        .remove ();
+    this._chart
+        .append ('line')
+        .attr ({
+            x1: 0,
+            y1: this._height - h (0),
+            x2: this._width,
+            y2: this._height - h (this._width),
+            'stroke-width': 2,
+            'stroke': 'blue',
+        });
+    this.h = h;
 };
 
 
 Chart.prototype._init = function () {
     this._setUpChart ();
+    var that = this;
+    setInterval (function () {
+        that._linearRegression ();
+    }, 2000);
 };
 
 return Chart;
 
 }) ();
 
-g = new Game (600, 400);
-c = new Chart (600, 400);
+g = new Game (400, 400);
+c = new Chart (400, 400);
 
 
 
