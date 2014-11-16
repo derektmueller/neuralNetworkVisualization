@@ -7,25 +7,74 @@
   <script src="d3.js" type="text/javascript"></script>
   <script src="jquery.js"></script>
   <script src="vis.js"></script>
+  <script src="nv.d3.js"></script>
   <link href="vis.css" rel="stylesheet" type="text/css" />
+  <link href="nv.d3.css" rel="stylesheet" type="text/css" />
   <style>
     #game {
       text-align: center;
       padding: 5px;
     }
-    #chart, #cost-chart {
+    #chart, #h-chart {
       display: inline-block;
+    }
+    #cost-chart {
+      text-align: center;
+    }
+    #cost-chart svg {
+      padding: 20px;
     }
     #chart-container {
       text-align: center;
+      position: relative;
+    }
+    #chart-label, #h-chart-label  {
+      position: absolute;
+      top: 50px;          
+    }
+    #cost-chart-label, #hits-chart-label {
+      display: block;
+      width: 800px;
+      margin: auto;
+      text-align: left;
     }
   </style>
 </head>
 <body>
+  <div id='score-box'>
+    <div class='hits'>
+      <label>Hits:</label>
+      <span>0</span>
+    </div>
+    <div class='elapsed-time'>
+      <label>Time Elapsed:</label>
+      <span>0:00</span>
+    </div>
+  </div>
+  <div id='legend'>
+    <div>
+      1. training set
+    </div>
+    <div>
+      2. hypothesis function
+    </div>
+    <div>
+      3. cost v iterations of gradient descent
+    </div>
+    <div>
+      4. hits over time
+    </div>
+  </div>
   <div id='game'></div>
   <div id='chart-container'>
+    <label id='chart-label'>1.</label>
     <div id='chart'></div>
+    <label id='h-chart-label'>2.</label>
+    <div id='h-chart'></div>
+    <label id='cost-chart-label'>3.</label>
     <div id='cost-chart'></div>
+    <label id='hits-chart-label'>4.</label>
+    <div id='hits-chart'></div>
   </div>
   <script src="multivariateLR.js" type="text/javascript"></script>
 </body>
