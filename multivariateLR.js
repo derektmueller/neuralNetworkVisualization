@@ -461,14 +461,14 @@ Chart.prototype._plotHitsChart = function () {
         })
         .y (function (d, i) { 
             return that._costChartHeight - 
-                that._costChartHeight * ((i + 1) / g._hits.length);
+                that._costChartHeight * (i / g._hits.length);
         })
         .interpolate ('linear')
         ;
     this._hitsChart.select ('path').remove ();
     //this._costChart.select ('.y-axis').remove ();
     this._hitsChart.append ('path')
-        .attr ('d', lineFn (g._hits))
+        .attr ('d', lineFn ([{x:0}].concat (g._hits)))
         .attr ('stroke', 'blue')
         .attr ('stroke-width', 1)
         .attr ('fill', 'none')
