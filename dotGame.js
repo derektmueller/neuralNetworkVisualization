@@ -1,9 +1,9 @@
-(function () {
+;(function () {
 
 
 trainingSet = [];
 featureSetSize = 2;
-
+outputNodes = 30;
 
 var Game = (function () {
 
@@ -18,11 +18,17 @@ function Game (width, height) {
     this._board;
     this._start = +new Date ();
     this._hits = [];
+    this.pausedTime = null;
 
     var elapsedTime$ = $('#score-box .elapsed-time span');
     var that = this;
+    this.timeInactive = 0;
     setInterval (function () {
-        var diff = +new Date () - that._start;
+        if (that.pausedTime) {
+            that.timeInactive += (+new Date ()) - that.pausedTime;
+            that.pausedTime = 0;
+        }
+        var diff = +new Date () - that._start - that.timeInactive;
         var seconds = Math.floor (diff / 1000);
         var minutes = Math.floor (seconds / 60);
         seconds = seconds % 60;
@@ -170,6 +176,13 @@ Game.prototype._AIPlayer = function () {
     var prevPos = 0;
     var hitCount$ = $('#score-box .hits span');
     function shoot (x) {
+        c._plotPredictionChart (x);
+        //console.log ('x = ');
+        //console.log (x);
+        x = x.indexOf (Math.max.apply (null, x)) * 
+            (that._width / outputNodes);
+        //return;
+        //x = x > 0.5 ? 200 : 0;
         var bullet = that._board
 //            .append ('line')
 //            .attr ({
@@ -245,18 +258,22 @@ Game.prototype._buildTrainingSet = function () {
     });
     previousLocations.pop ();
     setInterval (function () {
-        if (i % 3 === 0 || (i - 1) % 3 === 0) {
-            var currLocation = 
-                parseFloat (that._player.attr ('cx'));
-            trainingSet.push (
-                [previousLocations.slice (0), [currLocation]]);
-            if (trainingSet.length > that._traingSetSize) {
-                trainingSet.shift ();
-            }
-            previousLocations.push (that._scaleFeature (currLocation))
-            previousLocations.shift ();
-            c.plot ();
+        var currLocation = 
+            parseFloat (that._player.attr ('cx'));
+        var currPosition = (new Array (outputNodes + 1)).join ('0').
+            split ('').
+            map (function (elem) { return parseInt (elem, 10); });
+        currPosition[Math.floor (
+            (currLocation / that._width) * (outputNodes - 1))] = 1;
+        trainingSet.push ([
+            previousLocations.slice (0), 
+            currPosition
+        ]);
+        if (trainingSet.length > that._traingSetSize) {
+            trainingSet.shift ();
         }
+        previousLocations.push (that._scaleFeature (currLocation))
+        previousLocations.shift ();
     }, that._observationFrequency); 
 };
 
@@ -274,134 +291,43 @@ return Game;
 
 var Chart = (function () {
 
-
-function MyGraph3d (container, data, options) { 
-    vis.Graph3d.apply (this, Array.prototype.slice.call (arguments));
-    this.drawAxes = options.drawAxes === undefined ? 
-        true : options.drawAxes;
-}
-
-MyGraph3d.prototype = Object.create (vis.Graph3d.prototype);
-
-//// Overrided to remove interactivity
-//// This method is 
-//// Copyright (C) 2011-2014 Almende B.V, http://almende.com
-//MyGraph3d.prototype.create = function () {
-//    // remove all elements from the container element.
-//    while (this.containerElement.hasChildNodes()) {
-//      this.containerElement.removeChild(this.containerElement.firstChild);
-//    }
-//
-//    this.frame = document.createElement('div');
-//    this.frame.style.position = 'relative';
-//    this.frame.style.overflow = 'hidden';
-//
-//    // create the graph canvas (HTML canvas element)
-//    this.frame.canvas = document.createElement( 'canvas' );
-//    this.frame.canvas.style.position = 'relative';
-//    this.frame.appendChild(this.frame.canvas);
-//    //if (!this.frame.canvas.getContext) {
-//    {
-//      var noCanvas = document.createElement( 'DIV' );
-//      noCanvas.style.color = 'red';
-//      noCanvas.style.fontWeight =  'bold' ;
-//      noCanvas.style.padding =  '10px';
-//      noCanvas.innerHTML =  'Error: your browser does not support HTML canvas';
-//      this.frame.canvas.appendChild(noCanvas);
-//    }
-//
-//    this.frame.filter = document.createElement( 'div' );
-//    this.frame.filter.style.position = 'absolute';
-//    this.frame.filter.style.bottom = '0px';
-//    this.frame.filter.style.left = '0px';
-//    this.frame.filter.style.width = '100%';
-//    this.frame.appendChild(this.frame.filter);
-//
-//    // add event listeners to handle moving and zooming the contents
-//    var me = this;
-//    var onmousedown = function (event) {me._onMouseDown(event);};
-//    var ontouchstart = function (event) {me._onTouchStart(event);};
-//    var onmousewheel = function (event) {me._onWheel(event);};
-//    var ontooltip = function (event) {me._onTooltip(event);};
-//    // TODO: these events are never cleaned up... can give a 'memory leakage'
-//
-//    // add the new graph to the container element
-//    this.containerElement.appendChild(this.frame);
-//};
-
-
-// enable disableable axes
-MyGraph3d.prototype._redrawAxis = function () {
-    if (this.drawAxes) vis.Graph3d.prototype._redrawAxis.call (this);
-}
-
-
 function Chart (width, height) {
     this._chart; 
-    this._hChart; 
     this._element$ = $('#chart');
-    this._hChartElem$ = $('#h-chart');
     this._costChartElem$ = $('#cost-chart');
     this._hitsChartElem$ = $('#hits-chart');
+    this._predictionChart$ = $('#prediction-chart');
+    this._predictionChartWidth = 400;
     this._width = width;
     this._costChartHeight = 200;
     this._costChartWidth = 800;
     this._costChartStepSize = 1;
     this._height = height;
-    this._alpha = 0.1;
-    this._gdIters = 200;
+    this._alpha = 3.0;
+    this._gdIters = 500;
     var that = this;
-    this.h = this._getH ([0, 0, 0]);
-
-    this._cost = function (Theta) {
-        var h = that._getH (Theta);
-        var sum = 0;
-        trainingSet.forEach (function (ex) {
-            sum += Math.pow (h (ex[0]) - ex[1], 2);
-        });
-        return (1 / (2 * trainingSet.length)) * sum;
-    };
-
-    this._partialDerivatives = 
-        [0, 1, 2].map (function (i) {
-            return function (Theta) {
-                var h = that._getH (Theta);
-                var sum = 0;
-                trainingSet.forEach (function (ex) {
-                    sum += mathjs.multiply (
-                        (h (ex[0]) - ex[1][0]), 
-                        i === 0 ? 1 : ex[0][i - 1]);
-                });
-                return (1 / (trainingSet.length)) * sum;
-            };
-        });
-
+    this.nn = new NN ([
+        featureSetSize, 
+        Math.floor ((outputNodes + featureSetSize) / 2), 
+        outputNodes
+    ]);
+    this.nn.enableGradientChecking = false;
+    this.h = this.nn.getH (this.nn.initTheta ());
     this._init ();
 };
 
 Chart.prototype._gradientDescent = function () {
     var that = this;
     var i = this._gdIters;
-    var Theta = [0, 0, 0];
+    this.nn.trainingSet = trainingSet;
     var costs = [];
-    var maxCost = -Infinity;
-    while (--i > 0) {
-        Theta = mathjs.subtract (
-            Theta, 
-            mathjs.multiply (
-                this._alpha,
-                Theta.map (function (a, i) {
-                    return that._partialDerivatives[i] (Theta);
-                })));
-        //console.log ('!!Theta = ');
-        //console.log (Theta);
-        var cost = this._cost (Theta);
-        costs.push ({
-            y: cost,
-        });
-        maxCost = cost > maxCost ? cost : maxCost;
-        //if (cost < 1) break;
-    }
+    var Theta = this.nn.gradientDescent (i, this._alpha, costs);
+    //console.log ('costs = ');
+    //console.log (costs);
+    var maxCost = Math.max.apply (null, costs);
+    costs = costs.map (function (elem) {
+        return {y: elem};
+    });
 
     // plot cost function outputs
     var lineFn = d3.svg.line ()
@@ -451,13 +377,39 @@ Chart.prototype._gradientDescent = function () {
     return Theta;
 };
 
+Chart.prototype._plotPredictionChart = function (y) {
+    var that = this;
+    var color = d3.scale.linear ()
+        .domain ([0, 1])
+        .range (['white', 'black'])
+        ;
+    this._predictionChart
+        .selectAll ('rect')
+            .data (y)
+        .enter ().append ('rect')
+            .attr ('width', this._predictionChartWidth / outputNodes)
+            .attr ('height', this._predictionChartWidth / outputNodes)
+            .attr ('x', function (d, i) {
+                return i * (that._predictionChartWidth / outputNodes);
+            })
+            .attr ('stroke', 'gray')
+        ;
+    this._predictionChart
+        .selectAll ('rect')
+            .attr ('fill', function (d, i) {
+                return color (d);
+            })
+        ;
+};
+
 Chart.prototype._plotHitsChart = function () {
     var that = this;
     var now = +new Date ();
     // plot cost function outputs
     var lineFn = d3.svg.line ()
         .x (function (d, i) { 
-            return d.x / (now - g._start) * that._costChartWidth;
+            return d.x / (now - g._start - g.timeInactive) * 
+                that._costChartWidth;
         })
         .y (function (d, i) { 
             return that._costChartHeight - 
@@ -476,131 +428,64 @@ Chart.prototype._plotHitsChart = function () {
 
 };
 
-Chart.prototype._getH = function (Theta) {
-    var Theta = [[Theta[0], Theta[1], Theta[2]]];
-    return function (X) {
-        var X = [1, X[0], X[1]];
-        //var X = [1, -Math.pow (X[0], 2), -Math.pow (X[1], 2)];
-        return mathjs.number (mathjs.multiply (Theta, X));
-    };
-};
-
 Chart.prototype._setUpChart = function () {
     var that = this;
-    var dummyDataSet = new vis.DataSet ();
-    dummyDataSet.add ({
-        x: 0,
-        y: 0,
-        z: 0
-    });
-
-    var config = {
-        xMax: 1,
-        yMax: 1,
-        zMax: 400,
-        xMin: -1,
-        yMin: -1,
-        zMin: -400,
-        width: '400px',
-        height: '400px',
-        xLabel: '',
-        yLabel: '',
-        zLabel: '',
-        xValueLabel: function () {return '';},
-        yValueLabel: function () {return '';},
-        zValueLabel: function () {return '';},
-    };
-    this._chart = new MyGraph3d (
-        this._element$.get (0),
-        dummyDataSet,
-        $.extend (config, {
-             backgroundColor: 'transparent',
-             style: 'dot',
-        }));
-    this._hChart = new MyGraph3d (
-        this._hChartElem$.get (0),
-        dummyDataSet,
-        $.extend (config, {
-             style: 'surface',
-        }));
+    this._predictionChart = d3.select (this._predictionChart$.selector)
+        .append ('svg')
+            .attr ('height', 20)
+            .attr ('width', this._predictionChartWidth)
+        ;
     this._costChart = d3.select (this._costChartElem$.selector)
-            .append ('svg')
-        .attr ('height', that._costChartHeight)
-        .attr ('width', that._costChartWidth)
-            .append ('g')
+        .append ('svg')
+            .attr ('height', that._costChartHeight)
+            .attr ('width', that._costChartWidth)
+        .append ('g')
         ;
     this._costChart
-            .append ('line')
-        .attr ('x1', 0)
-        .attr ('y1', that._costChartHeight)
-        .attr ('x2', this._costChartWidth)
-        .attr ('y2', that._costChartHeight)
-        .attr ('stroke', 'black')
-        .attr ('stroke-width', '1px')
+        .append ('line')
+            .attr ('x1', 0)
+            .attr ('y1', that._costChartHeight)
+            .attr ('x2', this._costChartWidth)
+            .attr ('y2', that._costChartHeight)
+            .attr ('stroke', 'black')
+            .attr ('stroke-width', '1px')
         ;
 
     this._hitsChart = d3.select (this._hitsChartElem$.selector)
-            .append ('svg')
-        .attr ('height', that._costChartHeight)
-        .attr ('width', that._costChartWidth)
-            .append ('g')
+        .append ('svg')
+            .attr ('height', that._costChartHeight)
+            .attr ('width', that._costChartWidth)
+        .append ('g')
         ;
     this._hitsChart
-            .append ('line')
-        .attr ('x1', 0)
-        .attr ('y1', that._costChartHeight)
-        .attr ('x2', this._costChartWidth)
-        .attr ('y2', that._costChartHeight)
-        .attr ('stroke', 'black')
-        .attr ('stroke-width', '1px')
+        .append ('line')
+            .attr ('x1', 0)
+            .attr ('y1', that._costChartHeight)
+            .attr ('x2', this._costChartWidth)
+            .attr ('y2', that._costChartHeight)
+            .attr ('stroke', 'black')
+            .attr ('stroke-width', '1px')
         ;
     
 };
 
-Chart.prototype.plot = function () {
-    var that = this;
-    var data = new vis.DataSet ();
-    for (var i in trainingSet) {
-        var example = trainingSet[i];
-        data.add ({
-            x: example[0][0],
-            y: example[0][1],
-            z: example[1][0],
-        });
-    }
-    this._chart.setData (data);
-    this._chart.redraw ();
-};
-
-Chart.prototype._linearRegression = function () {
+Chart.prototype._train = function () {
     var Theta = this._gradientDescent ();
-    var h = this._getH (Theta);
-
-    var step = 40;
-    var data = new vis.DataSet ();
-    for (var x = 0; x < 400; x += step) {
-        for (var y = 0; y < 400; y += step) {
-            data.add ({ 
-                x: g._scaleFeature (x), 
-                y: g._scaleFeature (y), 
-                z: h ([x, y].map (function (a) {
-                    return g._scaleFeature (a);
-                })), 
-            });
-        }
-    }
-    this._hChart.setData (data);
-    this._hChart.redraw ();
-    this.h = h;
+    this.h = this.nn.getH (Theta);
 };
 
 
 Chart.prototype._init = function () {
     this._setUpChart ();
     var that = this;
-    var interval = setInterval (function () {
-        that._linearRegression ();
+    setTimeout (function () {
+        that._train ();
     }, 2000);
+    var interval = setTimeout (function retrainInterval () {
+        g.pausedTime = +(new Date ());
+        that._train ();
+        interval = setTimeout (retrainInterval, 32000);
+    }, 32000);
 };
 
 return Chart;
